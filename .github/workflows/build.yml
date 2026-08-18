@@ -1,0 +1,53 @@
+name: Build iOS App
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch: {}
+
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode_15.4.app/Contents/Developer
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Build for Simulator (проверка компиляции)
+        run: |
+          xcodebuild build \
+            -project DanceAlarm.xcodeproj \
+            -scheme DanceAlarm \
+            -destination "generic/platform=iOS Simulator" \
+            CODE_SIGNING_ALLOWED=NO
+
+      # Сборка неподписанного .ipa для устройства (нужна для дальнейшей подписи локально в Xcode
+      # либо через свой сертификат/профиль, добавленный сюда как GitHub Secret)
+      - name: Build unsigned .xcarchive for device
+        run: |
+          xcodebuild archive \
+            -project DanceAlarm.xcodeproj \
+            -scheme DanceAlarm \
+            -destination "generic/platform=iOS" \
+            -archivePath build/DanceAlarm.xcarchive \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: Package unsigned .ipa (Payload)
+        run: |
+          mkdir -p build/Payload
+          cp -r build/DanceAlarm.xcarchive/Products/Applications/DanceAlarm.app build/Payload/
+          cd build && zip -r DanceAlarm-unsigned.ipa Payload
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: DanceAlarm-unsigned-ipa
+          path: build/DanceAlarm-unsigned.ipa

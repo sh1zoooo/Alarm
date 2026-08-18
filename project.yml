@@ -1,0 +1,23 @@
+name: DanceAlarm
+options:
+  bundleIdPrefix: com.sh1zoooo
+  deploymentTarget:
+    iOS: "16.0"
+targets:
+  DanceAlarm:
+    type: application
+    platform: iOS
+    sources:
+      - path: DanceAlarm
+    info:
+      path: DanceAlarm/Info.plist
+      properties:
+        UILaunchScreen: {}
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.sh1zoooo.dancealarm
+        MARKETING_VERSION: "1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        SWIFT_VERSION: "5.0"
+        TARGETED_DEVICE_FAMILY: "1"
+        CODE_SIGN_STYLE: Automatic
