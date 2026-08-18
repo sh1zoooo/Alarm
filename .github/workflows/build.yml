@@ -12,6 +12,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Select Xcode 16.2
+        run: sudo xcode-select -s /Applications/Xcode_16.2.app/Contents/Developer
+
       - name: Show Xcode version
         run: |
           echo "::warning::AVAILABLE_XCODES=$(ls /Applications | grep -i xcode | tr '\n' ',')"
@@ -36,7 +39,19 @@ jobs:
           fi
 
       - name: List simulators
-        run: xcrun simctl list devices available | grep -i iphone | head -5
+        run: |
+          xcrun simctl list devices available | grep -i iphone | head -5
+          SIM_NAME=$(xcrun simctl list devices available -j | python3 -c "
+import json,sys
+d = json.load(sys.stdin)
+for runtime, devices in d['devices'].items():
+    for dev in devices:
+        if 'iPhone' in dev['name']:
+            print(dev['name'])
+            sys.exit(0)
+")
+          echo "SIM_NAME=$SIM_NAME" >> $GITHUB_ENV
+          echo "::warning::CHOSEN_SIM=$SIM_NAME"
 
       - name: Inspect project format
         run: |
@@ -49,7 +64,7 @@ jobs:
           xcodebuild build \
             -project DanceAlarm.xcodeproj \
             -scheme DanceAlarm \
-            -destination "platform=iOS Simulator,name=iPhone 15" \
+            -destination "platform=iOS Simulator,name=$SIM_NAME" \
             CODE_SIGNING_ALLOWED=NO 2>&1 | tee build.log || {
               echo "----- ERROR LINES ONLY -----";
               grep -iE "error:|BUILD FAILED|fatal|cannot find|no such module" build.log | sort -u | head -n 40 | while IFS= read -r line; do echo "::error::$line"; done;
