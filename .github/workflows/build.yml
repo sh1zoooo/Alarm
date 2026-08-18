@@ -19,7 +19,12 @@ jobs:
         run: brew install xcodegen
 
       - name: Generate Xcode project
-        run: xcodegen generate
+        run: |
+          xcodegen generate --spec project.yml
+          echo "----- Result -----"
+          ls -la
+          ls -la DanceAlarm.xcodeproj || true
+          test -f DanceAlarm.xcodeproj/project.pbxproj && echo "pbxproj EXISTS, size:" && wc -c DanceAlarm.xcodeproj/project.pbxproj || echo "pbxproj MISSING"
 
       - name: List simulators
         run: xcrun simctl list devices available | grep -i iphone | head -5
