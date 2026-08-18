@@ -21,10 +21,17 @@ jobs:
       - name: Generate Xcode project
         run: |
           xcodegen generate --spec project.yml
-          echo "----- Result -----"
-          ls -la
-          ls -la DanceAlarm.xcodeproj || true
-          test -f DanceAlarm.xcodeproj/project.pbxproj && echo "pbxproj EXISTS, size:" && wc -c DanceAlarm.xcodeproj/project.pbxproj || echo "pbxproj MISSING"
+          echo "::warning::GEN_DONE ls_root=$(ls -1 | tr '\n' ',')"
+          if [ -d DanceAlarm.xcodeproj ]; then
+            echo "::warning::PROJ_EXISTS contents=$(ls -1 DanceAlarm.xcodeproj | tr '\n' ',')"
+          else
+            echo "::warning::PROJ_MISSING"
+          fi
+          if [ -f DanceAlarm.xcodeproj/project.pbxproj ]; then
+            echo "::warning::PBXPROJ_SIZE=$(wc -c < DanceAlarm.xcodeproj/project.pbxproj)"
+          else
+            echo "::warning::PBXPROJ_MISSING"
+          fi
 
       - name: List simulators
         run: xcrun simctl list devices available | grep -i iphone | head -5
