@@ -41,15 +41,7 @@ jobs:
       - name: List simulators
         run: |
           xcrun simctl list devices available | grep -i iphone | head -5
-          SIM_NAME=$(xcrun simctl list devices available -j | python3 -c "
-import json,sys
-d = json.load(sys.stdin)
-for runtime, devices in d['devices'].items():
-    for dev in devices:
-        if 'iPhone' in dev['name']:
-            print(dev['name'])
-            sys.exit(0)
-")
+          SIM_NAME=$(xcrun simctl list devices available -j | python3 -c "import json,sys; d=json.load(sys.stdin); names=[dev['name'] for devs in d['devices'].values() for dev in devs if 'iPhone' in dev['name']]; print(names[0] if names else '')")
           echo "SIM_NAME=$SIM_NAME" >> $GITHUB_ENV
           echo "::warning::CHOSEN_SIM=$SIM_NAME"
 
