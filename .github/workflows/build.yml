@@ -12,43 +12,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # Xcode 16.2 нужен, потому что XcodeGen генерирует project.pbxproj
+      # в формате (objectVersion 77), который не читает Xcode 15.x на раннере
       - name: Select Xcode 16.2
         run: sudo xcode-select -s /Applications/Xcode_16.2.app/Contents/Developer
-
-      - name: Show Xcode version
-        run: |
-          echo "::warning::AVAILABLE_XCODES=$(ls /Applications | grep -i xcode | tr '\n' ',')"
-          xcodebuild -version
 
       - name: Install XcodeGen
         run: brew install xcodegen
 
       - name: Generate Xcode project
-        run: |
-          xcodegen generate --spec project.yml
-          echo "::warning::GEN_DONE ls_root=$(ls -1 | tr '\n' ',')"
-          if [ -d DanceAlarm.xcodeproj ]; then
-            echo "::warning::PROJ_EXISTS contents=$(ls -1 DanceAlarm.xcodeproj | tr '\n' ',')"
-          else
-            echo "::warning::PROJ_MISSING"
-          fi
-          if [ -f DanceAlarm.xcodeproj/project.pbxproj ]; then
-            echo "::warning::PBXPROJ_SIZE=$(wc -c < DanceAlarm.xcodeproj/project.pbxproj)"
-          else
-            echo "::warning::PBXPROJ_MISSING"
-          fi
-
-      - name: List simulators
-        run: |
-          xcrun simctl list devices available | grep -i iphone | head -5
-          SIM_NAME=$(xcrun simctl list devices available -j | python3 -c "import json,sys; d=json.load(sys.stdin); names=[dev['name'] for devs in d['devices'].values() for dev in devs if 'iPhone' in dev['name']]; print(names[0] if names else '')")
-          echo "SIM_NAME=$SIM_NAME" >> $GITHUB_ENV
-          echo "::warning::CHOSEN_SIM=$SIM_NAME"
-
-      - name: Inspect project format
-        run: |
-          echo "::warning::OBJVER=$(grep -m1 objectVersion DanceAlarm.xcodeproj/project.pbxproj)"
-          xcodebuild -list -project DanceAlarm.xcodeproj 2>&1 | while IFS= read -r line; do echo "::warning::LIST:$line"; done || true
+        run: xcodegen generate --spec project.yml
 
       - name: Build for Simulator (проверка компиляции)
         run: |
@@ -58,7 +31,6 @@ jobs:
             -scheme DanceAlarm \
             -destination "generic/platform=iOS Simulator" \
             CODE_SIGNING_ALLOWED=NO 2>&1 | tee build.log || {
-              echo "----- ERROR LINES ONLY -----";
               grep -iE "error:|BUILD FAILED|fatal|cannot find|no such module" build.log | sort -u | head -n 40 | while IFS= read -r line; do echo "::error::$line"; done;
               exit 1;
             }
