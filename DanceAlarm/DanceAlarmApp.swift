@@ -28,23 +28,37 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
     func application(_ application: UIApplication,
                       didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
         UNUserNotificationCenter.current().delegate = self
-        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in }
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
+            DispatchQueue.main.async {
+                AlarmManager.shared.notificationsAuthorized = granted
+                if let error {
+                    print("❌ Ошибка запроса разрешений: \(error)")
+                }
+                if !granted {
+                    print("⚠️ Пользователь НЕ разрешил уведомления — будильники не будут срабатывать!")
+                }
+            }
+        }
         BackgroundAudioKeeper.shared.start()
         return true
+    }
+
+    func applicationDidBecomeActive(_ application: UIApplication) {
+        AlarmManager.shared.refreshAuthorizationStatus()
     }
 
     // Показываем алерт, даже если приложение открыто
     func userNotificationCenter(_ center: UNUserNotificationCenter,
                                  willPresent notification: UNNotification,
                                  withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
-        AlarmManager.shared.triggerRinging(alarmId: notification.request.identifier)
+        AlarmManager.shared.triggerRinging(userInfo: notification.request.content.userInfo)
         completionHandler([.banner, .sound])
     }
 
     func userNotificationCenter(_ center: UNUserNotificationCenter,
                                  didReceive response: UNNotificationResponse,
                                  withCompletionHandler completionHandler: @escaping () -> Void) {
-        AlarmManager.shared.triggerRinging(alarmId: response.notification.request.identifier)
+        AlarmManager.shared.triggerRinging(userInfo: response.notification.request.content.userInfo)
         completionHandler()
     }
 }

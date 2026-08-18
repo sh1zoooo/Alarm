@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct ContentView: View {
     @EnvironmentObject var alarmManager: AlarmManager
@@ -7,6 +8,35 @@ struct ContentView: View {
     var body: some View {
         NavigationView {
             List {
+                if !alarmManager.notificationsAuthorized {
+                    Section {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Label("Уведомления запрещены", systemImage: "exclamationmark.triangle.fill")
+                                .foregroundColor(.red)
+                                .font(.headline)
+                            Text("Будильники не будут срабатывать, пока ты не разрешишь уведомления в Настройках.")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                            Button("Открыть Настройки") {
+                                if let url = URL(string: UIApplication.openSettingsURLString) {
+                                    UIApplication.shared.open(url)
+                                }
+                            }
+                        }
+                        .padding(.vertical, 4)
+                    }
+                }
+
+                Section {
+                    Button {
+                        AlarmScheduler.scheduleTestAlarm(seconds: 10, challenge: .dance)
+                    } label: {
+                        Label("Тест: будильник через 10 сек", systemImage: "timer")
+                    }
+                } footer: {
+                    Text("Сверни приложение (или не сворачивай — уведомление сработает в любом случае) и подожди 10 секунд, чтобы проверить, что будильник реально срабатывает.")
+                }
+
                 ForEach(alarmManager.alarms) { alarm in
                     HStack {
                         VStack(alignment: .leading, spacing: 4) {
@@ -27,6 +57,9 @@ struct ContentView: View {
                 .onDelete(perform: alarmManager.removeAlarm)
             }
             .navigationTitle("Будильники")
+            .onAppear {
+                alarmManager.refreshAuthorizationStatus()
+            }
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button {
