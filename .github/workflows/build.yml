@@ -36,6 +36,11 @@ jobs:
       - name: List simulators
         run: xcrun simctl list devices available | grep -i iphone | head -5
 
+      - name: Inspect project format
+        run: |
+          echo "::warning::OBJVER=$(grep -m1 objectVersion DanceAlarm.xcodeproj/project.pbxproj)"
+          xcodebuild -list -project DanceAlarm.xcodeproj 2>&1 | while IFS= read -r line; do echo "::warning::LIST:$line"; done || true
+
       - name: Build for Simulator (проверка компиляции)
         run: |
           set -o pipefail
