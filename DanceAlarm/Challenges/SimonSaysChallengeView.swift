@@ -1,22 +1,26 @@
 import SwiftUI
 
+/// Многоэтапный Simon Says: раунд 1 — 2 цвета, раунд 2 — 3 цвета, раунд 3 — 4 цвета.
+/// Перед каждым показом есть пауза "Приготовься", чтобы не начиналось внезапно.
 struct SimonSaysChallengeView: View {
     let onCompleted: () -> Void
     private let colors: [Color] = [.red, .green, .blue, .yellow]
-    private let sequenceLength = 4 // было 5 — сделали чуть проще
+    private let stageLengths = [2, 3, 4] // три этапа возрастающей сложности
 
+    @State private var stageIndex = 0
     @State private var sequence: [Int] = []
     @State private var userInput: [Int] = []
     @State private var isShowingSequence = true
-    @State private var highlightedIndex: Int? = nil       // подсветка во время показа последовательности
-    @State private var tappedIndex: Int? = nil             // подсветка когда САМ пользователь нажал
+    @State private var isPreparing = true
+    @State private var highlightedIndex: Int? = nil
+    @State private var tappedIndex: Int? = nil
     @State private var tappedIsWrong = false
-    @State private var statusText = "Запоминай..."
+    @State private var statusText = "Приготовься..."
 
     var body: some View {
         ChallengeScaffold(
             icon: "square.grid.2x2.fill",
-            title: "Simon Says",
+            title: "Simon Says — этап \(stageIndex + 1)/\(stageLengths.count)",
             subtitle: statusText
         ) {
             VStack(spacing: 20) {
@@ -30,10 +34,10 @@ struct SimonSaysChallengeView: View {
                             .animation(.easeOut(duration: 0.15), value: tappedIndex)
                             .animation(.easeOut(duration: 0.15), value: highlightedIndex)
                             .onTapGesture { tap(idx) }
-                            .disabled(isShowingSequence)
+                            .disabled(isShowingSequence || isPreparing)
                     }
                 }
-                if !isShowingSequence {
+                if !isShowingSequence && !isPreparing {
                     Button {
                         playSequence()
                     } label: {
@@ -45,29 +49,38 @@ struct SimonSaysChallengeView: View {
                 }
             }
         }
-        .onAppear(perform: newGame)
+        .onAppear { startStage(0) }
     }
 
-    private func newGame() {
-        sequence = (0..<sequenceLength).map { _ in Int.random(in: 0..<colors.count) }
+    private func startStage(_ index: Int) {
+        stageIndex = index
+        sequence = (0..<stageLengths[index]).map { _ in Int.random(in: 0..<colors.count) }
         userInput = []
-        playSequence()
+        isPreparing = true
+        statusText = "Приготовься..."
+        // Пауза перед показом — чтобы игрок успел сфокусироваться на экране
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+            isPreparing = false
+            playSequence()
+        }
     }
 
     private func playSequence() {
         isShowingSequence = true
         statusText = "Запоминай..."
+        let interval = 1.0   // время между началами вспышек — с запасом на реакцию глаз
+        let flashDuration = 0.55
         for (i, idx) in sequence.enumerated() {
-            DispatchQueue.main.asyncAfter(deadline: .now() + Double(i) * 0.8) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + Double(i) * interval) {
                 highlightedIndex = idx
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
+                DispatchQueue.main.asyncAfter(deadline: .now() + flashDuration) {
                     highlightedIndex = nil
                 }
             }
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + Double(sequence.count) * 0.8) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + Double(sequence.count) * interval) {
             isShowingSequence = false
-            statusText = "Теперь повтори! (\(userInput.count)/\(sequence.count))"
+            statusText = "Повтори! (\(userInput.count)/\(sequence.count))"
         }
     }
 
@@ -82,15 +95,20 @@ struct SimonSaysChallengeView: View {
         }
 
         if !isCorrect {
-            statusText = "Ошибка, начинаем заново"
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) { newGame() }
+            statusText = "Ошибка, начинаем этап заново"
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { startStage(stageIndex) }
             return
         }
 
         userInput.append(idx)
         if userInput.count == sequence.count {
-            statusText = "Отлично! ✅"
-            onCompleted()
+            if stageIndex == stageLengths.count - 1 {
+                statusText = "Все этапы пройдены! ✅"
+                onCompleted()
+            } else {
+                statusText = "Этап пройден! Следующий..."
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { startStage(stageIndex + 1) }
+            }
         } else {
             statusText = "Повтори! (\(userInput.count)/\(sequence.count))"
         }

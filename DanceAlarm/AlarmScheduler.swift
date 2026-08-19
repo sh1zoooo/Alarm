@@ -10,7 +10,7 @@ enum AlarmScheduler {
         let content = UNMutableNotificationContent()
         content.title = alarm.label
         content.body = "Задание: \(alarm.challenge.rawValue) — \(alarm.challenge.description)"
-        content.sound = .default
+        content.sound = UNNotificationSound(named: UNNotificationSoundName("alarm_notification.wav"))
         if #available(iOS 15.0, *) {
             content.interruptionLevel = .timeSensitive // повышает шанс пробиться через Focus/Не беспокоить без спецразрешения
         }
@@ -66,7 +66,7 @@ enum AlarmScheduler {
         let content = UNMutableNotificationContent()
         content.title = "Тестовый будильник"
         content.body = "Задание: \(challenge.rawValue)"
-        content.sound = .default
+        content.sound = UNNotificationSound(named: UNNotificationSoundName("alarm_notification.wav"))
         content.userInfo = ["alarmId": "test-alarm"]
 
         let trigger = UNTimeIntervalNotificationTrigger(timeInterval: seconds, repeats: false)

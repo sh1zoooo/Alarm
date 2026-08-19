@@ -41,18 +41,18 @@ struct ChallengeScaffold<Content: View>: View {
 
     var body: some View {
         ZStack {
-            LinearGradient(colors: [.black, .red.opacity(0.6)], startPoint: .top, endPoint: .bottom)
+            Theme.ringingGradient
                 .ignoresSafeArea()
             VStack(spacing: 24) {
                 Image(systemName: icon)
                     .font(.system(size: 60))
-                    .foregroundColor(.white)
+                    .foregroundColor(Theme.textPrimary)
                 Text(title)
-                    .font(.title.bold())
-                    .foregroundColor(.white)
+                    .font(.system(.title, design: .rounded).bold())
+                    .foregroundColor(Theme.textPrimary)
                 Text(subtitle)
                     .font(.subheadline)
-                    .foregroundColor(.white.opacity(0.8))
+                    .foregroundColor(Theme.textSecondary)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 32)
                 content
