@@ -13,6 +13,14 @@ targets:
       path: DanceAlarm/Info.plist
       properties:
         UILaunchScreen: {}
+        NSCameraUsageDescription: "Камера нужна, чтобы выполнить задание для выключения будильника (например, отследить танец, сканировать QR-код или показать унитаз)"
+        NSMotionUsageDescription: "Датчики движения нужны, чтобы отследить танец или тряску телефона для выключения будильника"
+        UIBackgroundModes:
+          - audio
+        UIRequiredDeviceCapabilities:
+          - armv7
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.sh1zoooo.dancealarm

@@ -9,13 +9,16 @@ final class AlarmSoundPlayer {
         do {
             try AVAudioSession.sharedInstance().setCategory(.playback, options: [.duckOthers])
             try AVAudioSession.sharedInstance().setActive(true)
-            guard let url = Bundle.main.url(forResource: "alarm_sound", withExtension: "caf") else { return }
+            guard let url = Bundle.main.url(forResource: "alarm_sound", withExtension: "wav") else {
+                print("⚠️ alarm_sound.wav не найден в бандле")
+                return
+            }
             player = try AVAudioPlayer(contentsOf: url)
             player?.numberOfLoops = -1
             player?.volume = 1.0
             player?.play()
         } catch {
-            print("Alarm sound error: \(error)")
+            print("❌ Alarm sound error: \(error)")
         }
     }
 
@@ -26,24 +29,44 @@ final class AlarmSoundPlayer {
     }
 }
 
-/// Держит приложение "живым" в фоне через background audio mode с тишиной,
-/// чтобы таймеры/уведомления срабатывали надёжнее, как это делает Alarmy.
-/// ВАЖНО: в Info.plist должен быть добавлен Background Mode "Audio, AirPlay, and Picture in Picture".
+/// Держит приложение "живым" в фоне через background audio mode (тихий зацикленный звук)
+/// и каждые несколько секунд сверяет время с будильниками напрямую — это и есть
+/// "настоящий" механизм звонка, а не просто System-уведомление.
+/// ВАЖНО: работает только пока процесс жив (приложение свёрнуто, НЕ force-quit'нуто).
+/// Если пользователь смахнёт приложение из списка недавних — iOS убьёт процесс,
+/// и разбудить его сможет только тап по резервному локальному уведомлению.
 final class BackgroundAudioKeeper {
     static let shared = BackgroundAudioKeeper()
     private var silentPlayer: AVAudioPlayer?
+    private var watchTimer: Timer?
 
     func start() {
-        guard let url = Bundle.main.url(forResource: "silence", withExtension: "caf") else { return }
         do {
             try AVAudioSession.sharedInstance().setCategory(.playback, options: [.mixWithOthers])
             try AVAudioSession.sharedInstance().setActive(true)
-            silentPlayer = try AVAudioPlayer(contentsOf: url)
-            silentPlayer?.numberOfLoops = -1
-            silentPlayer?.volume = 0.01
-            silentPlayer?.play()
         } catch {
-            print("Background keeper error: \(error)")
+            print("❌ Background audio session error: \(error)")
         }
+
+        if let url = Bundle.main.url(forResource: "silence", withExtension: "wav") {
+            do {
+                silentPlayer = try AVAudioPlayer(contentsOf: url)
+                silentPlayer?.numberOfLoops = -1
+                silentPlayer?.volume = 0.01
+                silentPlayer?.play()
+            } catch {
+                print("❌ Silent player error: \(error)")
+            }
+        } else {
+            print("⚠️ silence.wav не найден — keep-alive может не работать в фоне")
+        }
+
+        watchTimer?.invalidate()
+        watchTimer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { _ in
+            AlarmManager.shared.checkForDueAlarms()
+        }
+        RunLoop.main.add(watchTimer!, forMode: .common)
+        // сразу проверяем один раз при старте
+        AlarmManager.shared.checkForDueAlarms()
     }
 }

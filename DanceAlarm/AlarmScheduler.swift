@@ -11,6 +11,9 @@ enum AlarmScheduler {
         content.title = alarm.label
         content.body = "Задание: \(alarm.challenge.rawValue) — \(alarm.challenge.description)"
         content.sound = .default
+        if #available(iOS 15.0, *) {
+            content.interruptionLevel = .timeSensitive // повышает шанс пробиться через Focus/Не беспокоить без спецразрешения
+        }
         content.categoryIdentifier = "ALARM_CATEGORY"
         content.userInfo = ["alarmId": alarm.id.uuidString]
 
@@ -88,6 +91,28 @@ enum AlarmScheduler {
                 } else if let trigger = r.trigger as? UNTimeIntervalNotificationTrigger {
                     print("  - \(r.identifier): через \(trigger.timeInterval) сек")
                 }
+            }
+        }
+    }
+
+    /// То же самое, но результат приходит в замыкание — чтобы показать прямо в UI на экране,
+    /// без необходимости смотреть консоль Xcode
+    static func fetchPendingDescriptions(completion: @escaping ([String]) -> Void) {
+        UNUserNotificationCenter.current().getPendingNotificationRequests { requests in
+            let lines: [String] = requests.map { r in
+                if let trigger = r.trigger as? UNCalendarNotificationTrigger {
+                    let date = trigger.nextTriggerDate()
+                    let formatter = DateFormatter()
+                    formatter.dateFormat = "dd.MM HH:mm:ss"
+                    let dateStr = date.map { formatter.string(from: $0) } ?? "неизвестно"
+                    return "\(r.content.title): \(dateStr)"
+                } else if let trigger = r.trigger as? UNTimeIntervalNotificationTrigger {
+                    return "\(r.content.title): через \(Int(trigger.timeInterval))с"
+                }
+                return r.content.title
+            }
+            DispatchQueue.main.async {
+                completion(lines)
             }
         }
     }

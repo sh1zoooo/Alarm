@@ -4,6 +4,8 @@ import UIKit
 struct ContentView: View {
     @EnvironmentObject var alarmManager: AlarmManager
     @State private var showingAddSheet = false
+    @State private var showPendingDebug = false
+    @State private var pendingDescriptions: [String] = []
 
     var body: some View {
         NavigationView {
@@ -27,14 +29,50 @@ struct ContentView: View {
                     }
                 }
 
+                Section("Проверить задание сразу (без ожидания)") {
+                    ForEach(ChallengeType.allCases) { type in
+                        Button {
+                            alarmManager.testChallenge(type)
+                        } label: {
+                            Label(type.rawValue, systemImage: type.icon)
+                        }
+                    }
+                }
+
                 Section {
                     Button {
-                        AlarmScheduler.scheduleTestAlarm(seconds: 10, challenge: .dance)
+                        AlarmScheduler.scheduleTestAlarm(seconds: 15, challenge: .dance)
                     } label: {
-                        Label("Тест: будильник через 10 сек", systemImage: "timer")
+                        Label("Тест реального будильника через 15 сек", systemImage: "timer")
+                    }
+                    if showPendingDebug {
+                        if pendingDescriptions.isEmpty {
+                            Text("Нет запланированных уведомлений")
+                                .foregroundColor(.secondary)
+                                .font(.caption)
+                        } else {
+                            ForEach(pendingDescriptions, id: \.self) { line in
+                                Text(line).font(.caption).foregroundColor(.secondary)
+                            }
+                        }
+                        if let last = alarmManager.lastWatchdogCheck {
+                            Text("Watchdog последний раз проверял: \(last.formatted(date: .omitted, time: .standard))")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                        } else {
+                            Text("Watchdog ещё не запускался")
+                                .font(.caption2)
+                                .foregroundColor(.orange)
+                        }
                     }
                 } footer: {
-                    Text("Сверни приложение (или не сворачивай — уведомление сработает в любом случае) и подожди 10 секунд, чтобы проверить, что будильник реально срабатывает.")
+                    Button(showPendingDebug ? "Скрыть отладку" : "Показать отладку (что реально запланировано)") {
+                        showPendingDebug.toggle()
+                        if showPendingDebug {
+                            AlarmScheduler.fetchPendingDescriptions { pendingDescriptions = $0 }
+                        }
+                    }
+                    .font(.caption)
                 }
 
                 ForEach(alarmManager.alarms) { alarm in

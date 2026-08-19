@@ -1,43 +1,53 @@
 import SwiftUI
-import CoreMotion
+import AVFoundation
+import Vision
 
-/// Нужно активно двигаться (танцевать) REQUIRED_SECONDS секунд подряд.
-/// Если движение прекращается — таймер сбрасывается, чтобы нельзя было "накопить" рывками.
+/// Танец с фронтальной камерой: Vision отслеживает ключевые точки тела
+/// (запястья, локти, колени, лодыжки, торс) и считает, насколько активно
+/// человек двигается. Нужно набрать `requiredSeconds` активного движения подряд.
 struct DanceChallengeView: View {
     let onCompleted: () -> Void
     private let requiredSeconds: Double = 8.0
-    private let motionThreshold: Double = 1.3 // порог "резкого" ускорения (в g)
 
-    @StateObject private var tracker = DanceMotionTracker()
+    @StateObject private var tracker = DanceBodyTracker()
 
     var body: some View {
-        ChallengeScaffold(
-            icon: "figure.dance",
-            title: "Танцуй!",
-            subtitle: "Активно двигайся \(Int(requiredSeconds)) секунд без остановки, чтобы выключить будильник"
-        ) {
-            VStack(spacing: 20) {
-                ZStack {
-                    Circle()
-                        .stroke(Color.white.opacity(0.2), lineWidth: 12)
-                        .frame(width: 180, height: 180)
-                    Circle()
-                        .trim(from: 0, to: tracker.progress)
-                        .stroke(Color.green, style: StrokeStyle(lineWidth: 12, lineCap: .round))
-                        .frame(width: 180, height: 180)
-                        .rotationEffect(.degrees(-90))
-                        .animation(.linear(duration: 0.1), value: tracker.progress)
-                    Text("\(Int(tracker.progress * requiredSeconds))s / \(Int(requiredSeconds))s")
-                        .font(.title2.bold())
+        ZStack {
+            CameraPreview(session: tracker.session)
+                .ignoresSafeArea()
+
+            SkeletonOverlay(points: tracker.currentPoints)
+                .ignoresSafeArea()
+
+            VStack {
+                Spacer()
+                VStack(spacing: 16) {
+                    ZStack {
+                        Circle()
+                            .stroke(Color.white.opacity(0.25), lineWidth: 10)
+                            .frame(width: 140, height: 140)
+                        Circle()
+                            .trim(from: 0, to: tracker.progress)
+                            .stroke(Color.green, style: StrokeStyle(lineWidth: 10, lineCap: .round))
+                            .frame(width: 140, height: 140)
+                            .rotationEffect(.degrees(-90))
+                            .animation(.linear(duration: 0.1), value: tracker.progress)
+                        Text("\(Int(tracker.progress * requiredSeconds))s")
+                            .font(.title.bold())
+                            .foregroundColor(.white)
+                    }
+                    Text(tracker.statusText)
                         .foregroundColor(.white)
+                        .font(.headline)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                        .background(.black.opacity(0.5))
+                        .cornerRadius(12)
                 }
-                Text(tracker.isMoving ? "🔥 Так держать!" : "Двигайся активнее!")
-                    .foregroundColor(.white)
-                    .font(.headline)
+                .padding(.bottom, 50)
             }
         }
         .onAppear {
-            tracker.threshold = motionThreshold
             tracker.requiredSeconds = requiredSeconds
             tracker.onCompleted = onCompleted
             tracker.start()
@@ -48,36 +58,114 @@ struct DanceChallengeView: View {
     }
 }
 
-final class DanceMotionTracker: ObservableObject {
-    private let motionManager = CMMotionManager()
-    @Published var progress: Double = 0
-    @Published var isMoving: Bool = false
+/// Отслеживает позу человека через фронтальную камеру и Vision Body Pose Detection.
+final class DanceBodyTracker: NSObject, ObservableObject, AVCaptureVideoDataOutputSampleBufferDelegate {
+    let session = AVCaptureSession()
+    private let output = AVCaptureVideoDataOutput()
+    private let queue = DispatchQueue(label: "dance.body.tracker")
 
-    var threshold: Double = 1.3
+    @Published var progress: Double = 0
+    @Published var statusText: String = "Ищу тебя в кадре..."
+    @Published var currentPoints: [CGPoint] = [] // нормализованные точки (0..1) для отрисовки скелета
+
     var requiredSeconds: Double = 8.0
     var onCompleted: (() -> Void)?
 
     private var accumulatedTime: Double = 0
-    private var lastUpdate: Date?
+    private var lastFrameTime: Date?
+    private var previousJoints: [VNHumanBodyPoseObservation.JointName: CGPoint] = [:]
+
+    private let trackedJoints: [VNHumanBodyPoseObservation.JointName] = [
+        .leftWrist, .rightWrist, .leftElbow, .rightElbow,
+        .leftKnee, .rightKnee, .leftAnkle, .rightAnkle,
+        .neck, .root
+    ]
+    // порог суммарного нормализованного смещения точек между кадрами, который считаем "движением"
+    private let movementThreshold: CGFloat = 0.12
 
     func start() {
-        guard motionManager.isAccelerometerAvailable else { return }
-        motionManager.accelerometerUpdateInterval = 1.0 / 30.0
-        lastUpdate = Date()
-        motionManager.startAccelerometerUpdates(to: .main) { [weak self] data, _ in
-            guard let self, let data else { return }
-            let magnitude = sqrt(pow(data.acceleration.x, 2) + pow(data.acceleration.y, 2) + pow(data.acceleration.z, 2))
-            let deviation = abs(magnitude - 1.0) // 1g — гравитация в покое
-            let now = Date()
-            let dt = now.timeIntervalSince(self.lastUpdate ?? now)
-            self.lastUpdate = now
+        session.beginConfiguration()
+        session.sessionPreset = .medium
+        if let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .front),
+           let input = try? AVCaptureDeviceInput(device: device),
+           session.canAddInput(input) {
+            session.addInput(input)
+        }
+        output.setSampleBufferDelegate(self, queue: queue)
+        output.videoSettings = [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA]
+        if session.canAddOutput(output) {
+            session.addOutput(output)
+        }
+        if let connection = output.connection(with: .video), connection.isVideoOrientationSupported {
+            connection.videoOrientation = .portrait
+        }
+        session.commitConfiguration()
+        lastFrameTime = Date()
+        queue.async { self.session.startRunning() }
+    }
 
-            if deviation > (self.threshold - 1.0) {
-                self.isMoving = true
+    func stop() {
+        queue.async { self.session.stopRunning() }
+    }
+
+    func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
+        guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
+
+        let request = VNDetectHumanBodyPoseRequest()
+        let handler = VNImageRequestHandler(cvPixelBuffer: pixelBuffer, orientation: .up)
+        do {
+            try handler.perform([request])
+        } catch {
+            return
+        }
+
+        guard let observation = request.results?.first else {
+            DispatchQueue.main.async {
+                self.statusText = "Не вижу тебя — встань перед камерой"
+                self.currentPoints = []
+            }
+            return
+        }
+
+        var joints: [VNHumanBodyPoseObservation.JointName: CGPoint] = [:]
+        for jointName in trackedJoints {
+            if let point = try? observation.recognizedPoint(jointName), point.confidence > 0.3 {
+                joints[jointName] = point.location
+            }
+        }
+
+        // считаем суммарное смещение относительно предыдущего кадра по всем совпавшим точкам
+        var totalMovement: CGFloat = 0
+        var matchedCount = 0
+        for (name, point) in joints {
+            if let prev = previousJoints[name] {
+                let dx = point.x - prev.x
+                let dy = point.y - prev.y
+                totalMovement += sqrt(dx * dx + dy * dy)
+                matchedCount += 1
+            }
+        }
+        previousJoints = joints
+
+        let now = Date()
+        let dt = now.timeIntervalSince(lastFrameTime ?? now)
+        lastFrameTime = now
+
+        let isMoving = matchedCount > 0 && totalMovement > movementThreshold
+
+        DispatchQueue.main.async {
+            self.currentPoints = joints.values.map { CGPoint(x: $0.x, y: 1 - $0.y) } // Vision Y снизу-вверх -> переворачиваем под SwiftUI
+
+            if joints.isEmpty {
+                self.statusText = "Не вижу тебя — встань перед камерой"
+                return
+            }
+
+            if isMoving {
+                self.statusText = "🔥 Танцуй, так держать!"
                 self.accumulatedTime += dt
             } else {
-                self.isMoving = false
-                // мягкий откат, а не полный сброс — чтобы короткие паузы между движениями не обнуляли всё
+                self.statusText = "Двигайся активнее — руки, ноги, всё тело!"
                 self.accumulatedTime = max(0, self.accumulatedTime - dt * 2)
             }
 
@@ -88,8 +176,27 @@ final class DanceMotionTracker: ObservableObject {
             }
         }
     }
+}
 
-    func stop() {
-        motionManager.stopAccelerometerUpdates()
+/// Рисует скелет-точки поверх камеры для наглядной обратной связи
+struct SkeletonOverlay: View {
+    let points: [CGPoint] // нормализованные 0..1 координаты
+
+    var body: some View {
+        GeometryReader { geo in
+            ZStack {
+                ForEach(0..<points.count, id: \.self) { i in
+                    Circle()
+                        .fill(Color.green)
+                        .frame(width: 14, height: 14)
+                        .position(
+                            x: (1 - points[i].x) * geo.size.width, // доп. зеркалим X, т.к. превью тоже зеркалим
+                            y: points[i].y * geo.size.height
+                        )
+                        .shadow(color: .green, radius: 4)
+                }
+            }
+        }
+        .allowsHitTesting(false)
     }
 }
